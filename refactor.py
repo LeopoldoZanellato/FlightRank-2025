@@ -99,6 +99,33 @@ train = pd.read_parquet("data/aeroclub/train.parquet")
 # In[6]:
 
 
+train.columns[:100]
+
+
+# In[7]:
+
+
+def reduce_memory_usage(df):
+    for col in df.columns:
+        col_type = df[col].dtypes
+        
+        if col_type == 'float64':
+            df[col] = pd.to_numeric(df[col], downcast='float')
+        elif col_type == 'int64':
+            df[col] = pd.to_numeric(df[col], downcast='integer')
+        elif col_type == 'object':
+            num_unique = df[col].nunique()
+            num_total = len(df[col])
+            if num_unique / num_total < 0.5:
+                df[col] = df[col].astype('category')
+    
+    return df
+train = reduce_memory_usage(train)
+
+
+# In[8]:
+
+
 df_train_raw = train.copy()
 
 
@@ -106,7 +133,7 @@ df_train_raw = train.copy()
 # Seleciona apenas as colunas que serão usadas no baseline.
 # 
 
-# In[135]:
+# In[9]:
 
 
 # Define as colunas que você quer manter
@@ -168,7 +195,7 @@ df_train = df_train_raw[columns_to_keep].iloc[:rows_to_copy].copy()
 # ### 5. Engenharia de features (corrige dtypes)
 # Corrige os dtypes
 
-# In[136]:
+# In[10]:
 
 
 def fix_column_types(df):
@@ -199,7 +226,7 @@ df_train.dtypes  # Checar resultado
 # Divisão da coluna FrenquentFlyer
 # 
 
-# In[ ]:
+# In[11]:
 
 
 def count_frequent_flyers(value):
@@ -222,9 +249,10 @@ all_programs = set(chain.from_iterable(ff_lists))
 print(f"Total de companhias únicas: {len(all_programs)}")
 
 
-# In[ ]:
+# In[12]:
 
 
+"""
 for program in all_programs:
     if program == '':
         continue  # pula string vazia
@@ -233,15 +261,16 @@ for program in all_programs:
 for col in df_train.columns:
     if col.startswith("ff_"):
         df_train[col] = df_train[col].astype(pd.BooleanDtype())
+"""
 
 
-# In[ ]:
+# In[13]:
 
 
 df_train['searchRoute'].head()
 
 
-# In[ ]:
+# In[14]:
 
 
 df_train.drop('frequentFlyer', axis=1, inplace=True)
@@ -251,15 +280,21 @@ df_train.drop('frequentFlyer', axis=1, inplace=True)
 # Timedelta Columns
 # 
 
-# In[ ]:
+# In[15]:
 
 
-df_train['legs0_departureAt']
+#df_train['legs0_departureAt']
 
 
-# In[ ]:
+# In[16]:
 
 
+# 🗓️ Colunas de datas e horários
+cols_datetime = [
+    'requestDate',
+    'legs0_departureAt', 'legs0_arrivalAt',
+    'legs1_departureAt', 'legs1_arrivalAt'
+]
 def process_datetime_and_duration(df):
     df_processed = df.copy()
 
@@ -310,7 +345,7 @@ def process_datetime_and_duration(df):
 
 
 
-# In[ ]:
+# In[17]:
 
 
 df_train['legs0_duration_minutes'] = (
@@ -323,30 +358,36 @@ df_train['legs0_duration_minutes'] = (
 df_train.drop('legs0_segments0_duration', axis=1, inplace=True)
 
 
-# In[ ]:
+# In[18]:
 
 
 df_train['legs0_duration_minutes']
 
 
-# In[ ]:
+# In[19]:
+
+
+df_train
+
+
+# In[20]:
 
 
 # ✅ Applicação
 df_train = process_datetime_and_duration(df_train)
 
 
-# In[ ]:
+# In[21]:
 
 
-df_train.drop(columns=cols_datetime, inplace=True)
+#df_train.drop(columns=cols_datetime, inplace=True)
 
 
 # ## 5. Engenharia de features
 # booleans
 # 
 
-# In[ ]:
+# In[22]:
 
 
 bool_cols = [
@@ -358,7 +399,7 @@ for col in bool_cols:
     df_train[col] = df_train[col].astype('boolean')
 
 
-# In[ ]:
+# In[23]:
 
 
 df_train
@@ -366,7 +407,7 @@ df_train
 
 # SEACH ROUTE
 
-# In[ ]:
+# In[24]:
 
 
 df_train['searchRoute'] = df_train['searchRoute'].astype(str)
@@ -377,7 +418,7 @@ print(f" max {max(df_train['searchRoute_count'])}")
 df_train.drop('searchRoute_count', axis=1, inplace=True)
 
 
-# In[ ]:
+# In[25]:
 
 
 # Garante que searchRoute está como string
@@ -397,7 +438,7 @@ df_train['volta_to'] = df_train['route_volta'].str[3:]
 df_train.drop('searchRoute', axis=1, inplace=True)
 
 
-# In[ ]:
+# In[26]:
 
 
 # Ver todos os dtypes
@@ -405,7 +446,7 @@ with pd.option_context('display.max_rows', None):
     display(df_train.dtypes)
 
 
-# In[ ]:
+# In[27]:
 
 
 # --- Target e grupo
@@ -463,12 +504,19 @@ for col in categorical_cols:
 
 
 
+
+
+# In[28]:
+
+
+# --- Separação por grupo (ranker_id)
 gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
 train_idx, val_idx = next(gss.split(df_train, groups=df_train["ranker_id"]))
 
 df_train_split = df_train.iloc[train_idx].copy()
-df_val = df_train.iloc[val_idx].copy()  # << IMPORTANTE
+df_val = df_train.iloc[val_idx].copy()
 
+# --- Features e targets
 X_train = df_train_split[features]
 y_train = df_train_split[target_col]
 groups_train = df_train_split[group_col].value_counts().sort_index().values
@@ -477,47 +525,227 @@ X_val = df_val[features]
 y_val = df_val[target_col]
 groups_val = df_val[group_col].value_counts().sort_index().values
 
-train_dataset = lgb.Dataset(X_train, y_train, group=groups_train, categorical_feature=categorical_cols)
-val_dataset = lgb.Dataset(X_val, y_val, group=groups_val, categorical_feature=categorical_cols, reference=train_dataset)
-
-# --- Parâmetros
-params = {
-    "objective": "lambdarank",
-    "metric": "ndcg",
-    "ndcg_eval_at": [3],
-    "learning_rate": 0.05,
-    "num_leaves": 31,
-    "min_data_in_leaf": 20,
-    "verbosity": -1,
+# --- Parâmetros que afetam o Dataset (incluindo GPU e max_bin!)
+dataset_params = {
+    "max_bin": 63,  # ou 31, se continuar com erro
+    "device": "gpu"
 }
 
-# --- Treinamento com early stopping
-model = lgb.train(
-    params,
-    train_dataset,
-    valid_sets=[train_dataset, val_dataset],
-    valid_names=["train", "valid"],
-    num_boost_round=1000,
-    callbacks=[lgb.early_stopping(stopping_rounds=50)],
-    #verbose_eval=50
+# --- Criação dos Datasets
+train_dataset = lgb.Dataset(
+    X_train,
+    label=y_train,
+    group=groups_train,
+    categorical_feature=categorical_cols,
+    params=dataset_params  # 💡 AQUI é onde max_bin deve ir também!
 )
 
-# --- Predição
-y_pred = model.predict(X_val)
+val_dataset = lgb.Dataset(
+    X_val,
+    label=y_val,
+    group=groups_val,
+    categorical_feature=categorical_cols,
+    reference=train_dataset,
+    params=dataset_params
+)
 
-# --- Avaliação Top-1
-df_pred = df_val.copy()
-df_pred['y_true'] = y_val
-df_pred['y_pred'] = y_pred
 
-df_pred_sorted = df_pred.sort_values(['ranker_id', 'y_pred'], ascending=[True, False])
-df_top1 = df_pred_sorted.groupby('ranker_id').head(1)
 
-acertos = df_top1['y_true'].sum()
-total = df_top1.shape[0]
+# In[30]:
 
-print(f"Voos escolhidos corretamente (top1): {acertos} de {total} sessões")
-print(f"Acurácia top1: {acertos / total:.4f}")
+
+def train_lgbm_model(
+    train_dataset, 
+    val_dataset, 
+    boosting_type="gbdt", 
+    num_boost_round=1000, 
+    early_stopping_rounds=50, 
+    eval_log_every=50,
+    random_state=42
+):
+    print(f"\n--- Treinando modelo LightGBM com boosting: {boosting_type} ---")
+
+    params = {
+        "objective": "lambdarank",
+        "metric": "ndcg",
+        "ndcg_eval_at": [3],
+        "boosting_type": boosting_type,
+        "learning_rate": 0.05,
+        "num_leaves": 31,
+        "min_data_in_leaf": 20,
+        "subsample": 0.8,
+        "verbosity": -1,
+        "random_state": random_state
+    }
+
+    # Parâmetros adicionais para DART
+    if boosting_type == "dart":
+        params.update({
+            "drop_rate": 0.1,
+            "skip_drop": 0.5,
+        })
+        early_stopping = []  # não funciona com DART
+        num_boost_round = max(num_boost_round, 1500)
+    else:
+        early_stopping = [lgb.early_stopping(early_stopping_rounds)]
+
+    model = lgb.train(
+        params,
+        train_dataset,
+        valid_sets=[train_dataset, val_dataset],
+        valid_names=["train", "valid"],
+        num_boost_round=num_boost_round,
+        callbacks=[
+            *early_stopping,
+            lgb.log_evaluation(eval_log_every)
+        ]
+    )
+
+    return model
+
+model = train_lgbm_model(
+    train_dataset,
+    val_dataset,
+    boosting_type="dart",     # ou "gbdt", "goss"
+    num_boost_round=2500,
+    early_stopping_rounds=100,
+    eval_log_every=50
+)
+
+
+# In[ ]:
+
+
+# ============================================================
+# ✅ Treinamento final com TODO o dataset de treino
+#     usando best_iteration encontrado na validação
+# ============================================================
+
+X_full = df_train[features]
+y_full = df_train[target_col]
+groups_full = df_train[group_col].value_counts().sort_index().values
+
+full_dataset = lgb.Dataset(X_full, y_full, group=groups_full, categorical_feature=categorical_cols)
+
+# ⚠️ Usa o número ideal de iterações do treino anterior
+final_model = lgb.train(
+    params,
+    full_dataset,
+    num_boost_round=model.best_iteration  # << Aqui está a mágica
+)
+
+
+# In[ ]:
+
+
+
+
+
+# In[ ]:
+
+
+
+
+
+# In[ ]:
+
+
+# ============================================================
+# ## 6. Geração de Submissão
+# ============================================================
+
+# 1. Ler test.parquet
+df_test = pd.read_parquet("data/aeroclub/test.parquet")
+
+# 2. Aplicar transformações mínimas necessárias
+df_test['ranker_id'] = df_test['ranker_id'].astype(str)
+df_test['nationality'] = df_test['nationality'].astype(str)
+df_test['searchRoute'] = df_test['searchRoute'].astype(str)
+
+# --- Frequent Flyer (mesmos one-hot do treino)
+df_test['frequentFlyer'] = df_test['frequentFlyer'].fillna('').astype(str)
+ff_lists_test = df_test['frequentFlyer'].str.split('/')
+
+for program in all_programs:
+    if program == '':
+        continue
+    df_test[f'ff_{program}'] = ff_lists_test.apply(lambda x: int(program in x))
+
+for col in [col for col in df_test.columns if col.startswith("ff_")]:
+    df_test[col] = df_test[col].astype(pd.BooleanDtype())
+
+df_test['frequentFlyer_count'] = df_test['frequentFlyer'].apply(count_frequent_flyers)
+df_test['hasFrequentFlyer'] = df_test['frequentFlyer'].notnull().astype(int)
+df_test.drop(columns=['frequentFlyer'], inplace=True)
+
+# --- Datas
+cols_datetime = [
+    'requestDate',
+    'legs0_departureAt', 'legs0_arrivalAt',
+    'legs1_departureAt', 'legs1_arrivalAt'
+]
+for col in cols_datetime:
+    df_test[col] = pd.to_datetime(df_test[col], errors='coerce')
+
+df_test['legs0_dep_hour'] = df_test['legs0_departureAt'].dt.hour
+df_test['legs0_dep_dayofweek'] = df_test['legs0_departureAt'].dt.dayofweek
+df_test['legs1_dep_hour'] = df_test['legs1_departureAt'].dt.hour
+df_test['legs1_dep_dayofweek'] = df_test['legs1_departureAt'].dt.dayofweek
+df_test['trip_days'] = (df_test['legs1_departureAt'] - df_test['legs0_departureAt']).dt.days
+df_test['booking_to_trip_days'] = (df_test['legs0_departureAt'] - df_test['requestDate']).dt.days
+df_test['ida_fds'] = df_test['legs0_dep_dayofweek'].isin([5, 6]).astype(int)
+df_test['volta_fds'] = df_test['legs1_dep_dayofweek'].isin([5, 6]).astype(int)
+
+df_test['ida_comercial'] = df_test['legs0_dep_hour'].apply(lambda x: int(7 <= x <= 19))
+df_test['volta_comercial'] = df_test['legs1_dep_hour'].apply(lambda x: int(7 <= x <= 19))
+
+df_test.drop(columns=cols_datetime, inplace=True)
+
+# --- Duração
+def clean_and_convert_duration(col):
+    return (
+        col
+        .fillna("00:00:00")
+        .astype(str)
+        .str.strip()
+        .str.replace("nan", "00:00:00")
+        .pipe(pd.to_timedelta, errors='coerce')
+        .dt.total_seconds() / 60
+    )
+
+df_test['legs0_duration'] = clean_and_convert_duration(df_test['legs0_duration'])
+df_test['legs1_duration'] = clean_and_convert_duration(df_test['legs1_duration'])
+df_test['legs0_segments0_duration'] = clean_and_convert_duration(df_test['legs0_segments0_duration'])
+df_test['legs0_duration_minutes'] = df_test['legs0_duration']
+df_test.drop(columns=['legs0_segments0_duration'], inplace=True)
+
+# --- SearchRoute features
+df_test[['route_ida', 'route_volta']] = df_test['searchRoute'].str.split('/', expand=True)
+df_test['ida_from'] = df_test['route_ida'].str[:3]
+df_test['ida_to'] = df_test['route_ida'].str[3:]
+df_test['volta_from'] = df_test['route_volta'].str[:3]
+df_test['volta_to'] = df_test['route_volta'].str[3:]
+df_test.drop('searchRoute', axis=1, inplace=True)
+
+# --- Tipagem
+for col in categorical_cols:
+    df_test[col] = df_test[col].astype("category")
+
+for col in boolean_cols:
+    if col in df_test.columns:
+        df_test[col] = df_test[col].astype('boolean')
+
+# 3. Prever com o modelo
+X_test = df_test[features]
+df_test['y_pred'] = model.predict(X_test)
+
+# 4. Gerar submissão
+df_test_sorted = df_test.sort_values(['ranker_id', 'y_pred'], ascending=[True, False])
+df_test_sorted['selected'] = df_test_sorted.groupby('ranker_id').cumcount() + 1
+
+submission = df_test_sorted[['Id', 'ranker_id', 'selected']]
+submission.to_csv("submission.csv", index=False)
+print("✅ Arquivo de submissão salvo como 'submission.csv'")
 
 
 # In[ ]:
@@ -547,5 +775,5 @@ print(f"Acurácia top1: {acertos / total:.4f}")
 # In[ ]:
 
 
--
+
 
